@@ -99,7 +99,7 @@ def create_knee_fsm(osl: OpenSourceLeg) -> StateMachine:
         if not transition_allowed(osl):
             return False
 
-        if osl.filtered_fz < -LOAD_STANCE:
+        if osl.filtered_fz < LOAD_STANCE:
 
             osl.last_state_change_time = osl.clock_time
 
