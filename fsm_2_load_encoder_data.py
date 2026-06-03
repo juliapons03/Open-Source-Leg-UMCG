@@ -486,7 +486,7 @@ plt.show()
 
 # ---------------- Fz + My OVER TIME ---------------- #
 
-fig, ax1 = plt.subplots(figsize=(12, 6))
+fig, ax1 = plt.subplots(figsize=(12, 4))
 
 # Primary axis: Fz
 ax1.plot(time_log, loadcell_fz_log, label="Fz (N)", linewidth=2)
