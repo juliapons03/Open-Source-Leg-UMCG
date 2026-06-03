@@ -1,0 +1,154 @@
+[project]
+name = "opensourceleg"
+version = "3.5.0"
+description = "An open-source SDK for developing and testing algorithms on commonly used robotic hardware."
+authors = [{ name = "Open-Source Leg", email = "opensourceleg@gmail.com" }]
+requires-python = ">=3.11,<4.0"
+readme = "README.md"
+dependencies = [
+    "numpy>=1.24.3,<2",
+    "pandas>=2.2.3,<3",
+]
+
+[project.optional-dependencies]
+dephy = ["flexsea"]
+bno055 = [
+    "board~=1.0",
+    "adafruit-circuitpython-bno055>=5.4.13,<6 ; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "adafruit-circuitpython-lis3dh>=5.2.2,<6 ; sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
+moteus = [
+    "moteus>=0.3.72,<0.4",
+    "moteus-pi3hat>=0.3.29,<0.4 ; sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
+communication = [
+    "smbus2>=0.4.2",
+    "spidev>=3.7 ; sys_platform == 'linux'",
+]
+messaging = [
+    "grpcio>=1.65.5,<2",
+    "grpcio-tools>=1.65.5,<2",
+    "types-protobuf>=4.21.0,<5",
+]
+
+[project.urls]
+Repository = "https://github.com/neurobionics/opensourceleg"
+Documentation = "https://neurobionics.github.io/opensourceleg/"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.2.0,<8",
+    "pytest-cov>=4.0.0,<5",
+    "deptry>=0.16.2,<0.17",
+    "mypy>=1.5.1,<2",
+    "pre-commit>=3.4.0,<4",
+    "tox>=4.11.1,<5",
+    "ruff>=0.12.10",
+]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.27.0",
+    "mkdocs-autorefs>=1.4.0",
+]
+all = [
+    "flexsea",
+    "board~=1.0",
+    "adafruit-circuitpython-bno055>=5.4.13,<6 ; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "adafruit-circuitpython-lis3dh>=5.2.2,<6 ; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "moteus>=0.3.72,<0.4",  # moteus extra
+    "moteus-pi3hat>=0.3.29,<0.4 ; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "smbus2>=0.4.2",
+    "spidev>=3.7 ; sys_platform == 'linux'",
+    "grpcio>=1.65.5,<2",  # messaging extra
+    "grpcio-tools>=1.65.5,<2",  # messaging extra
+    "types-protobuf>=4.21.0,<5",  # messaging extra
+]
+
+[tool.uv]
+default-groups = [
+    "dev",
+    "docs",
+    "all",
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["opensourceleg"]
+
+[tool.hatch.build.targets.wheel]
+include = ["opensourceleg"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.mypy]
+files = ["opensourceleg"]
+exclude = ["opensourceleg/actuators/moteus.py", "opensourceleg/actuators/tmotor.py"]
+ignore_missing_imports = true
+disallow_untyped_defs = true
+disallow_any_unimported = true
+no_implicit_optional = true
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+show_error_codes = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+fix = true
+lint.select = [
+    # flake8-2020
+    "YTT",
+    # flake8-bandit
+    "S",
+    # flake8-bugbear
+    "B",
+    # flake8-builtins
+    "A",
+    # flake8-comprehensions
+    "C4",
+    # flake8-debugger
+    "T10",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+    # mccabe
+    "C90",
+    # pycodestyle
+    "E", "W",
+    # pyflakes
+    "F",
+    # pygrep-hooks
+    "PGH",
+    # pyupgrade
+    "UP",
+    # ruff
+    "RUF",
+    # tryceratops
+    "TRY",
+]
+lint.ignore = [
+    # DoNotAssignLambda
+    "E731",
+    "TRY003",
+    "SIM115",
+]
+
+[tool.ruff.format]
+preview = true
+
+[tool.coverage.report]
+skip_empty = true
+
+[tool.coverage.run]
+branch = true
+source = ["opensourceleg"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
