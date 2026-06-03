@@ -496,8 +496,8 @@ ax1.grid(True)
 
 # Secondary axis: My
 ax2 = ax1.twinx()
-ax2.plot(time_log, loadcell_my_log, "--", label="My (Nm)", linewidth=2)
-ax2.set_ylabel("My (Nm)")
+ax2.plot(time_log, loadcell_my_log, color="red", label="My (Nm)", linewidth=2)
+ax2.set_ylabel("My (Nm)", color="red")
 
 # Title
 plt.title("Loadcell Fz and My Over Time")
