@@ -59,9 +59,9 @@ def create_knee_fsm(osl: OpenSourceLeg) -> StateMachine:
 
     early_stance = State(
         name="early_stance",
-        knee_theta=5,
-        knee_stiffness=350,
-        knee_damping=15,
+        knee_theta=15,
+        knee_stiffness=50,
+        knee_damping=1,
     )
 
     # ---------- LATE STANCE ----------
