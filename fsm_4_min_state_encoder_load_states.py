@@ -1,7 +1,8 @@
 """
 Finite state machine (FSM)-based knee control system for the OpenSourceLeg platform.
-State transitions are based on FILTERED load cell feedback and the angular velocity of the encoder.
-Also has minimum state duration / transition lockout, to prevents rapid false switching due to noisy force signals
+State transitions are based on FILTERED load cell feedback only.
+
+Encoder is logged but not used for control.
 """
 
 import numpy as np
@@ -31,29 +32,21 @@ LOADCELL_CALIBRATION_MATRIX = np.array([
     (-0.65100, -28.28700, 0.02200, -25.23000, 0.47300, -27.3070),
 ])
 
-BODY_WEIGHT = 60 * 9.8
-
-LOAD_STANCE = 0.20 * BODY_WEIGHT
-LOAD_SWING = 0.05 * BODY_WEIGHT
-
-# Minimum time before another transition is allowed
-# Recommended values: 0.2 - 0.5 s
-MIN_STATE_TIME = 0.2
-
-# Minimum velocity for transition to be allowed
-STANCE_VEL_THRESHOLD = 40  # deg/s (swing to stance)
-SWING_VEL_THRESHOLD = 80  # deg/s (stance to swing)
+BODY_WEIGHT = 30 * 9.8
 
 # ---------------- FSM ---------------- #
 
+LOAD_EARLY_STANCE = 0.05 * BODY_WEIGHT
+LOAD_STANCE = 0.15 * BODY_WEIGHT
+LOAD_SWING = 0.10 * BODY_WEIGHT
+
+KNEE_ESTANCE = np.deg2rad(90)
+KNEE_LSTANCE = np.deg2rad(98)
+
+
 def create_knee_fsm(osl: OpenSourceLeg) -> StateMachine:
 
-    stance = State(
-        name="stance",
-        knee_theta=5,
-        knee_stiffness=500,
-        knee_damping=20,
-    )
+    # ---------- SWING ----------
 
     swing = State(
         name="swing",
@@ -62,69 +55,86 @@ def create_knee_fsm(osl: OpenSourceLeg) -> StateMachine:
         knee_damping=0.5,
     )
 
-    # Store last transition time
-    osl.last_state_change_time = 0.0
+    # ---------- EARLY STANCE ----------
 
-    # ---------------- TRANSITION LOCKOUT ---------------- #
-
-    def transition_allowed(osl):
-
-        current_time = osl.clock_time
-
-        return (
-            current_time - osl.last_state_change_time
-        ) >= MIN_STATE_TIME
-
-    # ---------------- TRANSITIONS ---------------- #
-
-    def stance_to_swing(osl):
-
-        # Block transition if lockout active
-        if not transition_allowed(osl):
-            return False
-
-        if (osl.filtered_fz > -LOAD_SWING and abs(osl.encoder_velocity_deg) > SWING_VEL_THRESHOLD):
-
-            osl.last_state_change_time = osl.clock_time
-
-            return True
-
-        return False
-
-    def swing_to_stance(osl):
-
-        # Block transition if lockout active
-        if not transition_allowed(osl):
-            return False
-
-        if (osl.filtered_fz < -LOAD_STANCE and abs(osl.encoder_velocity_deg) <  STANCE_VEL_THRESHOLD):
-
-            osl.last_state_change_time = osl.clock_time
-
-            return True
-
-        return False
-
-    fsm = StateMachine(
-        states=[stance, swing],
-        initial_state_name="stance",
+    early_stance = State(
+        name="early_stance",
+        knee_theta=5,
+        knee_stiffness=350,
+        knee_damping=15,
     )
 
-    fsm.add_transition(
-        source=stance,
-        destination=swing,
-        event_name="toe_off",
-        criteria=stance_to_swing,
+    # ---------- LATE STANCE ----------
+
+    late_stance = State(
+        name="late_stance",
+        knee_theta=5,
+        knee_stiffness=500,
+        knee_damping=20,
+    )
+
+    # --------------------------------------------------
+    # TRANSITIONS
+    # --------------------------------------------------
+
+    def swing_to_early_stance(osl):
+
+        theta = osl.sensors["encoder"].position
+
+        return (
+            osl.filtered_fz < -LOAD_EARLY_STANCE
+            and theta > KNEE_ESTANCE
+        )
+
+    def early_stance_to_late_stance(osl):
+
+        theta = osl.sensors["encoder"].position
+
+        return (
+            osl.filtered_fz < -LOAD_STANCE
+            and theta > KNEE_LSTANCE
+        )
+
+    def late_stance_to_swing(osl):
+
+        return osl.filtered_fz > -LOAD_SWING
+
+    # --------------------------------------------------
+    # FSM
+    # --------------------------------------------------
+
+    fsm = StateMachine(
+        states=[
+            swing,
+            early_stance,
+            late_stance,
+        ],
+        initial_state_name="late_stance",
     )
 
     fsm.add_transition(
         source=swing,
-        destination=stance,
+        destination=early_stance,
         event_name="heel_strike",
-        criteria=swing_to_stance,
+        criteria=swing_to_early_stance,
+    )
+
+    fsm.add_transition(
+        source=early_stance,
+        destination=late_stance,
+        event_name="loading_response",
+        criteria=early_stance_to_late_stance,
+    )
+
+    fsm.add_transition(
+        source=late_stance,
+        destination=swing,
+        event_name="toe_off",
+        criteria=late_stance_to_swing,
     )
 
     return fsm
+
 
 
 # ---------------- MAIN ---------------- #
@@ -181,7 +191,6 @@ if __name__ == "__main__":
 
     CUTOFF_HZ = 10
     DT = 1 / FREQUENCY
-
     alpha = DT / (1 / (2 * np.pi * CUTOFF_HZ) + DT)
 
     fz_filtered = 0.0
@@ -201,8 +210,17 @@ if __name__ == "__main__":
     encoder_velocity_log = []
 
     loadcell_fz_log = []
-
     loadcell_fz_filt_log = []
+
+    # ---------------- LOADCELL AXES LOGS ---------------- #
+
+    loadcell_fx_log = []
+    loadcell_fy_log = []
+    #loadcell_fz_full_log = []
+
+    loadcell_mx_log = []
+    loadcell_my_log = []
+    loadcell_mz_log = []
 
     # ---------------- START ---------------- #
 
@@ -232,26 +250,11 @@ if __name__ == "__main__":
                 # ---------------- FILTER ---------------- #
 
                 raw_fz = osl.loadcell.fz
-
-                fz_filtered = (
-                    alpha * raw_fz
-                    + (1 - alpha) * fz_filtered
-                )
+                fz_filtered = alpha * raw_fz + (1 - alpha) * fz_filtered
 
                 osl.filtered_fz = fz_filtered
 
-                # ---------------- ENCODER ---------------- #
-
-                encoder_theta = osl.sensors["encoder"].position
-                encoder_velocity = osl.sensors["encoder"].velocity
-
-                #store values for FSM access
-                osl.encoder_velocity_deg = np.rad2deg(encoder_velocity) 
-
                 # ---------------- FSM ---------------- #
-
-                # Store current loop time
-                osl.clock_time = t
 
                 fsm.update(osl=osl)
 
@@ -260,15 +263,25 @@ if __name__ == "__main__":
                 k = fsm.current_state.knee_stiffness
                 b = fsm.current_state.knee_damping
 
-                theta_ref = np.deg2rad(
-                    fsm.current_state.knee_theta
-                )
+                theta_ref = np.deg2rad(fsm.current_state.knee_theta)
 
                 theta_actual = osl.knee.output_position
 
-                osl.knee.set_output_impedance(k=k, b=b)
+                encoder_theta = osl.sensors["encoder"].position
+                encoder_velocity = osl.sensors["encoder"].velocity
 
+                osl.knee.set_output_impedance(k=k, b=b)
                 osl.knee.set_motor_position(theta_ref)
+
+                # ---------------- LOADCELL AXES ---------------- #
+
+                fx = osl.loadcell.fx
+                fy = osl.loadcell.fy
+                #fz = osl.loadcell.fz
+
+                mx = osl.loadcell.mx
+                my = osl.loadcell.my
+                mz = osl.loadcell.mz
 
                 # ---------------- LOG ---------------- #
 
@@ -290,32 +303,26 @@ if __name__ == "__main__":
 
                 k_log.append(k)
                 b_log.append(b)
+                state_log.append(fsm.current_state.name)
 
-                state_log.append(
-                    fsm.current_state.name
-                )
+                theta_log.append(np.rad2deg(theta_actual))
+                theta_ref_log.append(np.rad2deg(theta_ref))
 
-                theta_log.append(
-                    np.rad2deg(theta_actual)
-                )
-
-                theta_ref_log.append(
-                    np.rad2deg(theta_ref)
-                )
-
-                encoder_theta_log.append(
-                    np.rad2deg(encoder_theta)
-                )
-
-                encoder_velocity_log.append(
-                    np.rad2deg(encoder_velocity)
-                )
+                encoder_theta_log.append(np.rad2deg(encoder_theta))
+                encoder_velocity_log.append(np.rad2deg(encoder_velocity))
 
                 loadcell_fz_log.append(raw_fz)
+                loadcell_fz_filt_log.append(fz_filtered)
 
-                loadcell_fz_filt_log.append(
-                    fz_filtered
-                )
+                # ---------------- STORE LOADCELL AXES ---------------- #
+
+                loadcell_fx_log.append(fx)
+                loadcell_fy_log.append(fy)
+                #loadcell_fz_full_log.append(fz)
+
+                loadcell_mx_log.append(mx)
+                loadcell_my_log.append(my)
+                loadcell_mz_log.append(mz)
 
         except KeyboardInterrupt:
             print("\nStopped.")
@@ -339,81 +346,94 @@ encoder_velocity_log = np.array(encoder_velocity_log)
 loadcell_fz_log = np.array(loadcell_fz_log)
 loadcell_fz_filt_log = np.array(loadcell_fz_filt_log)
 
+# ---------------- CONVERT LOADCELL AXES ---------------- #
+
+loadcell_fx_log = np.array(loadcell_fx_log)
+loadcell_fy_log = np.array(loadcell_fy_log)
+#loadcell_fz_full_log = np.array(loadcell_fz_full_log)
+
+loadcell_mx_log = np.array(loadcell_mx_log)
+loadcell_my_log = np.array(loadcell_my_log)
+loadcell_mz_log = np.array(loadcell_mz_log)
+
 
 # ---------------- PLOT ---------------- #
 
+def plot_by_state(y, title, ylabel, filename):
+
+    plt.figure(figsize=(10, 5))
+
+    for i in range(1, len(time_log)):
+
+        style = "-" if state_log[i] == "stance" else "--"
+
+        plt.plot(
+            time_log[i - 1:i + 1],
+            y[i - 1:i + 1],
+            style,
+            color="black"
+        )
+
+    plt.title(title)
+    plt.xlabel("Time (s)")
+    plt.ylabel(ylabel)
+    plt.grid(True)
+
+    plt.savefig(filename, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+# ---------------- STIFFNESS ---------------- #
+
+plot_by_state(
+    k_log,
+    "Knee Stiffness Over Time",
+    "Stiffness (Nm/rad)",
+    "knee_stiffness_plot.png"
+)
+
+# ---------------- DAMPING ---------------- #
+
+plot_by_state(
+    b_log,
+    "Knee Damping Over Time",
+    "Damping",
+    "knee_damping_plot.png"
+)
+
 # ---------------- THETA ---------------- #
 
-plt.figure(figsize=(12, 4))
+plt.figure(figsize=(12, 6))
 
-plt.plot(
-    time_log,
-    theta_log,
-    label="Actuator Knee Angle",
-    linewidth=2
-)
+plt.plot(time_log, theta_log, label="Actuator Knee Angle", linewidth=2)
+plt.plot(time_log, theta_ref_log, "--", label="Reference Knee Angle", linewidth=2)
 
-plt.plot(
-    time_log,
-    theta_ref_log,
-    "--",
-    label="Reference Knee Angle",
-    linewidth=2
-)
-
-plt.title("Knee Angle Tracking Over Time (Min state duration: 0.2s + velocity in transition criteria)")
-
+plt.title("Knee Angle Tracking Over Time")
 plt.xlabel("Time (s)")
 plt.ylabel("Theta (deg)")
-
 plt.grid(True)
-plt.legend(loc="center left",bbox_to_anchor=(1, 0.5))
 
-plt.savefig(
-    "knee_theta_plot.png",
-    dpi=300,
-    bbox_inches="tight"
-)
+plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+
+plt.savefig("knee_theta_plot.png", dpi=300, bbox_inches="tight")
+
 
 # ---------------- ENCODER + LOADCELL ---------------- #
 
-fig, axs = plt.subplots(
-    3,
-    1,
-    figsize=(12, 10),
-    sharex=True
-)
+fig, axs = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
 
-axs[0].plot(
-    time_log,
-    encoder_theta_log
-)
-
+axs[0].plot(time_log, encoder_theta_log)
 axs[0].set_title("Encoder Angle")
 axs[0].set_ylabel("Angle (deg)")
 axs[0].grid(True)
 
-axs[1].plot(
-    time_log,
-    encoder_velocity_log
-)
-
+axs[1].plot(time_log, encoder_velocity_log)
 axs[1].set_title("Encoder Velocity")
 axs[1].set_ylabel("Velocity (deg/s)")
 axs[1].grid(True)
 
-axs[2].plot(
-    time_log,
-    loadcell_fz_log,
-    label="Raw"
-)
-
-axs[2].plot(
-    time_log,
-    loadcell_fz_filt_log,
-    label="Filtered"
-)
-
+axs[2].plot(time_log, loadcell_fz_log, label="Raw")
+axs[2].plot(time_log, loadcell_fz_filt_log, label="Filtered")
 axs[2].set_title("Loadcell Force")
 axs[2].set_xlabel("Time (s)")
 axs[2].set_ylabel("Fz (N)")
@@ -421,16 +441,106 @@ axs[2].legend()
 axs[2].grid(True)
 
 plt.tight_layout()
+plt.savefig("encoder_loadcell_outputs_plot.png", dpi=300, bbox_inches="tight")
 
-plt.savefig(
-    "encoder_loadcell_outputs_plot.png",
-    dpi=300,
-    bbox_inches="tight"
+
+# ---------------- 3x2 LOADCELL FORCES/MOMENTS ---------------- #
+
+fig, axs = plt.subplots(3, 2, figsize=(14, 10), sharex=True)
+
+# ---------- FORCE FX ----------
+axs[0, 0].plot(time_log, loadcell_fx_log, label="Fx")
+axs[0, 0].plot(
+    time_log,
+    encoder_theta_log,
+    color="lightgrey",
+    linewidth=1.5,
+    label="Encoder Angle"
 )
+axs[0, 0].set_title("Force Fx")
+axs[0, 0].set_ylabel("Fx (N)")
+axs[0, 0].grid(True)
+
+# ---------- FORCE FY ----------
+axs[1, 0].plot(time_log, loadcell_fy_log, label="Fy")
+axs[1, 0].plot(
+    time_log,
+    encoder_theta_log,
+    color="lightgrey",
+    linewidth=1.5,
+    label="Encoder Angle"
+)
+axs[1, 0].set_title("Force Fy")
+axs[1, 0].set_ylabel("Fy (N)")
+axs[1, 0].grid(True)
+
+# ---------- FORCE FZ ----------
+axs[2, 0].plot(time_log, loadcell_fz_log, label="Fz")
+axs[2, 0].plot(
+    time_log,
+    encoder_theta_log,
+    color="lightgrey",
+    linewidth=1.5,
+    label="Encoder Angle"
+)
+axs[2, 0].set_title("Force Fz")
+axs[2, 0].set_xlabel("Time (s)")
+axs[2, 0].set_ylabel("Fz (N)")
+axs[2, 0].grid(True)
+
+# ---------- MOMENT MX ----------
+axs[0, 1].plot(time_log, loadcell_mx_log, label="Mx")
+axs[0, 1].plot(
+    time_log,
+    encoder_theta_log,
+    color="lightgrey",
+    linewidth=1.5,
+    label="Encoder Angle"
+)
+axs[0, 1].set_title("Moment Mx")
+axs[0, 1].set_ylabel("Mx (Nm)")
+axs[0, 1].grid(True)
+
+# ---------- MOMENT MY ----------
+axs[1, 1].plot(time_log, loadcell_my_log, label="My")
+axs[1, 1].plot(
+    time_log,
+    encoder_theta_log,
+    color="lightgrey",
+    linewidth=1.5,
+    label="Encoder Angle"
+)
+axs[1, 1].set_title("Moment My")
+axs[1, 1].set_ylabel("My (Nm)")
+axs[1, 1].grid(True)
+
+# ---------- MOMENT MZ ----------
+axs[2, 1].plot(time_log, loadcell_mz_log, label="Mz")
+axs[2, 1].plot(
+    time_log,
+    encoder_theta_log,
+    color="lightgrey",
+    linewidth=1.5,
+    label="Encoder Angle"
+)
+axs[2, 1].set_title("Moment Mz")
+axs[2, 1].set_xlabel("Time (s)")
+axs[2, 1].set_ylabel("Mz (Nm)")
+axs[2, 1].grid(True)
+
+# Show legend only once
+axs[0, 0].legend(loc="upper right")
+
+plt.tight_layout()
+plt.savefig("loadcell_forces_moments_plot.png", dpi=300, bbox_inches="tight")
 
 plt.show()
 
-print("Saved all plots:")
 
+
+print("Saved all plots:")
+print("- knee_stiffness_plot.png")
+print("- knee_damping_plot.png")
 print("- knee_theta_plot.png")
 print("- encoder_loadcell_outputs_plot.png")
+print("- loadcell_forces_moments_plot.png")
