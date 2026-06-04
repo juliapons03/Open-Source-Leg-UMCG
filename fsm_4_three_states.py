@@ -32,6 +32,8 @@ LOADCELL_CALIBRATION_MATRIX = np.array([
 
 BODY_WEIGHT = 30 * 9.8
 
+MIN_STATE_TIME = 0.15 #seconds
+
 # ---------------- FSM ---------------- #
 
 LOAD_EARLY_STANCE = 0.05 * BODY_WEIGHT
@@ -58,7 +60,7 @@ def create_knee_fsm(osl: OpenSourceLeg) -> StateMachine:
     early_stance = State(
         name="early_stance",
         knee_theta=15,
-        knee_stiffness=50,
+        knee_stiffness=20,
         knee_damping=1,
     )
 
@@ -77,25 +79,52 @@ def create_knee_fsm(osl: OpenSourceLeg) -> StateMachine:
 
     def swing_to_early_stance(osl):
 
+        if not transition_allowed(osl):
+            return False
+
         theta = osl.sensors["encoder"].position
 
-        return (
+        if (
             osl.filtered_fz < -LOAD_EARLY_STANCE
             and theta > KNEE_ESTANCE
-        )
+        ):
+            osl.last_state_change_time = osl.clock_time
+            return True
+
+        return False
+
 
     def early_stance_to_late_stance(osl):
 
+        if not transition_allowed(osl):
+            return False
+
         theta = osl.sensors["encoder"].position
 
-        return (
+        if (
             osl.filtered_fz < -LOAD_STANCE
             and theta > KNEE_LSTANCE
-        )
+        ):
+            osl.last_state_change_time = osl.clock_time
+            return True
+
+        return False
+
+
 
     def late_stance_to_swing(osl):
 
-        return osl.filtered_fz > -LOAD_SWING
+        if not transition_allowed(osl):
+            return False
+
+        if osl.filtered_fz > -LOAD_SWING:
+
+            osl.last_state_change_time = osl.clock_time
+
+            return True
+
+        return False
+
 
     # --------------------------------------------------
     # FSM
@@ -244,6 +273,8 @@ if __name__ == "__main__":
             for t in clock:
 
                 osl.update()
+
+                osl.clock_time = t
 
                 # ---------------- FILTER ---------------- #
 
