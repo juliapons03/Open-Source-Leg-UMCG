@@ -32,7 +32,7 @@ LOADCELL_CALIBRATION_MATRIX = np.array([
 
 BODY_WEIGHT = 30 * 9.8
 
-MIN_STATE_TIME = 0.1 #seconds
+MIN_STATE_TIME = 0.15 #seconds
 
 # ---------------- FSM ---------------- #
 
