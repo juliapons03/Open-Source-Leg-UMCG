@@ -4,9 +4,7 @@ State transitions are based on FILTERED load cell feedback only.
 
 Encoder is logged but not used for control.
 
-Added:
-- Minimum state duration / transition lockout
-- Prevents rapid false switching due to noisy force signals
+Added: Minimum state duration / transition lockout to prevents rapid false switching due to noisy force signals
 """
 
 import numpy as np

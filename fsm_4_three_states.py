@@ -32,7 +32,7 @@ LOADCELL_CALIBRATION_MATRIX = np.array([
 
 BODY_WEIGHT = 30 * 9.8
 
-MIN_STATE_TIME = 0.15 #seconds
+MIN_STATE_TIME = 0.1 #seconds
 
 # ---------------- FSM ---------------- #
 
@@ -76,7 +76,17 @@ def create_knee_fsm(osl: OpenSourceLeg) -> StateMachine:
     # --------------------------------------------------
     # TRANSITIONS
     # --------------------------------------------------
+    
+    # Store last transition time
+    osl.last_state_change_time = 0.0
 
+    def transition_allowed(osl):
+
+        return (
+            osl.clock_time - osl.last_state_change_time
+        ) >= MIN_STATE_TIME
+
+    #Define transition criteria functions for each transition, checking both load cell and encoder conditions, and also respecting the minimum state time lockout.
     def swing_to_early_stance(osl):
 
         if not transition_allowed(osl):
@@ -136,7 +146,7 @@ def create_knee_fsm(osl: OpenSourceLeg) -> StateMachine:
             early_stance,
             late_stance,
         ],
-        initial_state_name="late_stance",
+        initial_state_name="early_stance",
     )
 
     fsm.add_transition(
