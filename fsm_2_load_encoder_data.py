@@ -1,6 +1,7 @@
 """
 Finite state machine (FSM)-based knee control system for the OpenSourceLeg platform.
-State transitions are based on FILTERED load cell feedback only.
+State transitions are based on FILTERED load cell feedback only and applies
+impedance control to the knee actuator in real time..
 
 Encoder is logged but not used for control.
 """
