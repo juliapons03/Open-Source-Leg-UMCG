@@ -43,7 +43,7 @@ LOAD_SWING = 0.05 * BODY_WEIGHT
 
 # Minimum time before another transition is allowed
 # Recommended values: 0.2 - 0.5 s
-MIN_STATE_TIME = 0.2
+MIN_STATE_TIME = 0.21
 
 
 # ---------------- FSM ---------------- #
