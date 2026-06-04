@@ -38,7 +38,7 @@ BODY_WEIGHT = 30 * 9.8
 
 LOAD_EARLY_STANCE = 0.05 * BODY_WEIGHT
 LOAD_STANCE = 0.15 * BODY_WEIGHT
-LOAD_SWING = 0.10 * BODY_WEIGHT
+LOAD_SWING = 0.08 * BODY_WEIGHT
 
 KNEE_ESTANCE = np.deg2rad(90)
 KNEE_LSTANCE = np.deg2rad(98)
@@ -363,15 +363,19 @@ def plot_by_state(y, title, ylabel, filename):
 
     plt.figure(figsize=(10, 5))
 
-    for i in range(1, len(time_log)):
+    state_colors = {
+    "swing": "tab:blue",
+    "early_stance": "tab:orange",
+    "late_stance": "tab:green",
+    }
 
-        style = "-" if state_log[i] == "stance" else "--"
+    for i in range(1, len(time_log)):
 
         plt.plot(
             time_log[i - 1:i + 1],
             y[i - 1:i + 1],
-            style,
-            color="black"
+            color=state_colors[state_log[i]],
+            linewidth=2,
         )
 
     plt.title(title)
