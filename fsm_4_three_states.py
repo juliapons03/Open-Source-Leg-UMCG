@@ -1,6 +1,6 @@
 """
 Finite state machine (FSM)-based knee control system for the OpenSourceLeg platform.
-State transitions are based on FILTERED load cell feedback and encoder angle. No minimum state duration / transition lockout, so rapid switching may occur due to noisy signals.
+State transitions are based on FILTERED load cell feedback and encoder angle. With minimum state duration / transition lockout, so rapid switching due to noisy signals is avoided.
 """
 
 import numpy as np
